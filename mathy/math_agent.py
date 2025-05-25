@@ -6,7 +6,7 @@ import re
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+MODEL = "gemma3:1b"
 
 def send_request_and_get_response(prompt: str) -> str:
     pre_prompt = """You are a math expert.
@@ -22,7 +22,7 @@ def send_request_and_get_response(prompt: str) -> str:
         """
     response = requests.post(
         "http://localhost:11434/api/generate",
-        json={"model": "qwen3:0.6b", "prompt": f"{pre_prompt}\n{prompt}"},
+        json={"model": MODEL, "prompt": f"{pre_prompt}\n{prompt}"},
     )
 
     tot = []
@@ -50,8 +50,6 @@ def evaluate(prompt: str) -> bool:
     llm_ans = int(match.group(1))
 
     to_ret = ans == llm_ans
-    if not to_ret:
-        logger.debug(f"{llm_res}\n\n{ans}")
     return to_ret
 
 
