@@ -9,18 +9,17 @@ logger = logging.getLogger(__name__)
 
 
 def send_request_and_get_response(prompt: str) -> str:
-    pre_prompt = """
-    You are a math expert.
-    You are given a math problem.
-    You need to solve the math problem.
-    You need to solve the math problem step by step.
-    Your answer should be a number.
-    Your answer should be between the following tag <answer> and </answer>
-    Your answer should match this regex <answer>(-?\d+)</answer>
-    Here is an example question and answer
-    question: "120 + 55"
-    answer: <answer>175</answer>
-    """
+    pre_prompt = """You are a math expert.
+        You are given a math problem.
+        You need to solve the math problem.
+        You need to solve the math problem step by step.
+        Your answer should be a number.
+        Your answer should be between the following tag <answer> and </answer>
+        Your answer should match this regex <answer>(-?\\d+)</answer>
+        Here is an example question and answer
+        question: "120 + 55"
+        answer: <answer>175</answer>
+        """
     response = requests.post(
         "http://localhost:11434/api/generate",
         json={"model": "qwen3:0.6b", "prompt": f"{pre_prompt}\n{prompt}"},
