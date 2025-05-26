@@ -1,6 +1,7 @@
 ```
 ollama run qwen3:0.6b
 ollama run gemma3:1b
+ollama run gemma3:4b
 ollama serve
 ```
 

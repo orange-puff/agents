@@ -3,26 +3,68 @@ import json
 import random
 import logging
 import re
+import operator
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-MODEL = "gemma3:1b"
+
+# constants
+MODEL = "gemma3:4b"
+SIMPLE_PROMPT = """
+You are a math expert.
+You are given a math problem.
+You need to solve the math problem.
+You need to solve the math problem step by step.
+Your answer should be a number.
+Your answer should be between the following tag <answer> and </answer>
+Your answer should match this regex <answer>(-?\\d+)</answer>
+Here is an example question and answer
+question: "120 + 55"
+answer: <answer>175</answer>
+"""
+AGENT_PROMPT = """
+You are a math expert.
+
+You will be given a simple arithmetic equation (e.g., "5 + 2 * 10"). Your task is to solve it step by step using only the tools provided.
+
+⚒️ Available tools:
+<tool>add(x,y)</tool>         – Computes x + y  
+<tool>subtract(x,y)</tool>    – Computes x - y  
+<tool>multiply(x,y)</tool>    – Computes x * y  
+
+🔧 Instructions:
+1. Break down the equation and follow correct order of operations (PEMDAS).
+2. Emit **one** <tool>(...) call at a time.
+3. Wait for the result to be returned in a <tool-result>...</tool-result> tag.
+4. Use that result in the next step, if needed.
+5. When the final result is known, output it as: <answer>...</answer>
+6. Your final answer must match this pattern: <answer>(-?\d+)</answer>
+
+📘 Example:
+
+Question: "5 + 2 * 10"
+
+Step 1:
+<tool>multiply(2,10)</tool>
+
+User replies:
+<tool-result>20</tool-result>
+
+Step 2:
+<tool>add(5,20)</tool>
+
+User replies:
+<tool-result>25</tool-result>
+
+Final output:
+<answer>25</answer>
+"""
+
 
 def send_request_and_get_response(prompt: str) -> str:
-    pre_prompt = """You are a math expert.
-        You are given a math problem.
-        You need to solve the math problem.
-        You need to solve the math problem step by step.
-        Your answer should be a number.
-        Your answer should be between the following tag <answer> and </answer>
-        Your answer should match this regex <answer>(-?\\d+)</answer>
-        Here is an example question and answer
-        question: "120 + 55"
-        answer: <answer>175</answer>
-        """
     response = requests.post(
         "http://localhost:11434/api/generate",
-        json={"model": MODEL, "prompt": f"{pre_prompt}\n{prompt}"},
+        json={"model": MODEL, "prompt": f"{prompt}"},
     )
 
     tot = []
@@ -34,30 +76,54 @@ def send_request_and_get_response(prompt: str) -> str:
             tot.append(line_json["response"])
 
     to_ret = "".join(tot)
-    logger.debug(f"LLM response:\n{to_ret}")
     return to_ret
 
 
-def evaluate(prompt: str) -> bool:
-    logger.debug(f"Evaluating: {prompt}")
+def evaluate(pre_prompt: str, prompt: str) -> bool:
     ans = eval(prompt)
-    llm_res = send_request_and_get_response(prompt)
+    prompt = f"Here is the equation you need to solve: `{prompt}`"
+    logger.debug(f"Evaluating: {prompt} with answer: {ans}")
 
-    match = re.search(r"<answer>(-?\d+)</answer>", llm_res)
-    if not match:
-        logger.error(f"Could not find answer in response: {llm_res}")
-        return False
-    llm_ans = int(match.group(1))
+    conversation = [f"SYSTEM PROMPT: {pre_prompt}", f"USER PROMPT: {prompt}"]
+    while True:
+        final_prompt = "\n".join(conversation)
+        llm_res = send_request_and_get_response(final_prompt)
+        conversation.append(llm_res)
 
-    to_ret = ans == llm_ans
-    return to_ret
+        logger.debug(
+            f"{'=' * 20}\nprompt sent: {final_prompt}\nLLM response:\n{llm_res}\n{'=' * 20}"
+        )
+        tool_used = False
+        for tool, op in [
+            ("add", operator.add),
+            ("subtract", operator.sub),
+            ("multiply", operator.mul),
+        ]:
+            pattern = f"<tool>{tool}\((-?\d+),\s?(-?\d+)\)</tool>"
+            search = re.search(pattern, llm_res)
+            if search:
+                conversation.append(
+                    f"<tool-result>{op(int(search.group(1)), int(search.group(2)))}</tool-result>"
+                )
+                tool_used = True
+                break
+
+        if tool_used:
+            continue
+
+        match = re.search(r"<answer>(-?\d+)</answer>", llm_res)
+        if not match:
+            logger.error(f"Could not find answer in response: {llm_res}")
+            return False
+        llm_ans = int(match.group(1))
+        return ans == llm_ans
 
 
 def construct_equation() -> str:
     num_low = 20
     num_high = 250
     nums_low = 2
-    nums_high = 7
+    nums_high = 3
     to_ret = ""
     nums = random.randint(nums_low, nums_high)
     mult_used = 0
@@ -69,11 +135,18 @@ def construct_equation() -> str:
     return to_ret
 
 
-correct = 0
-total = 100
-for i in range(1, total + 1):
-    if evaluate(construct_equation()):
-        correct += 1
-    if i % 5 == 0:
-        logger.info(f"Progress: {i}/{total} correct: ({correct}/{i})")
-print(f"Accuracy: {correct / total}")
+def run(pre_prompt: str):
+    correct = 0
+    total = 30
+    for i in range(1, total + 1):
+        if evaluate(pre_prompt, construct_equation()):
+            correct += 1
+        if i % 5 == 0:
+            logger.info(f"Progress: {i}/{total} correct: ({correct}/{i})")
+    print(f"Accuracy: {correct / total}")
+
+
+if __name__ == "__main__":
+    # logger.level = logging.DEBUG
+    run(SIMPLE_PROMPT)
+    run(AGENT_PROMPT)
