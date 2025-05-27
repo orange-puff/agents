@@ -12,15 +12,16 @@ logger = logging.getLogger(__name__)
 MODEL = "gemma3:4b"
 SIMPLE_PROMPT = """
 You are a math expert.
-You are given a math problem.
-You need to solve the math problem.
-You need to solve the math problem step by step.
-Your answer should be a number.
-Your answer should be between the following tag <answer> and </answer>
-Your answer should match this regex <answer>(-?\\d+)</answer>
-Here is an example question and answer
-question: "120 + 55"
-answer: <answer>175</answer>
+
+Solve the following math problem. Only return the final answer.
+
+Wrap your answer in <answer>...</answer> tags.
+
+Your answer must match this format: <answer>(-?\d+)</answer>
+
+Example:
+Question: 120 + 55 * 2
+Answer: <answer>230</answer>
 """
 AGENT_PROMPT = """
 You are a math expert.
@@ -81,11 +82,15 @@ def send_request_and_get_response(prompt: str) -> str:
 
 def evaluate(pre_prompt: str, prompt: str) -> bool:
     ans = eval(prompt)
-    prompt = f"Here is the equation you need to solve: `{prompt}`"
     logger.debug(f"Evaluating: {prompt} with answer: {ans}")
 
-    conversation = [f"SYSTEM PROMPT: {pre_prompt}", f"USER PROMPT: {prompt}"]
-    while True:
+    conversation = [
+        f"SYSTEM PROMPT: {pre_prompt}",
+        f'Here is the equation you need to solve: "{prompt}"',
+    ]
+    num_iter = 0
+    while num_iter < 3:
+        num_iter += 1
         final_prompt = "\n".join(conversation)
         llm_res = send_request_and_get_response(final_prompt)
         conversation.append(llm_res)
@@ -113,10 +118,18 @@ def evaluate(pre_prompt: str, prompt: str) -> bool:
 
         match = re.search(r"<answer>(-?\d+)</answer>", llm_res)
         if not match:
-            logger.error(f"Could not find answer in response: {llm_res}")
+            final_prompt = "\n".join(conversation)
+            logger.error("Could not find answer in response")
+            logger.debug(f"{'=' * 20}\n{final_prompt}\n{'=' * 20}")
             return False
         llm_ans = int(match.group(1))
         return ans == llm_ans
+
+    if num_iter == 3:
+        final_prompt = "\n".join(conversation)
+        logger.error("Agent got stuck in a loop")
+        logger.debug(f"{'=' * 20}\n{final_prompt}\n{'=' * 20}")
+        return False
 
 
 def construct_equation() -> str:
@@ -137,7 +150,7 @@ def construct_equation() -> str:
 
 def run(pre_prompt: str):
     correct = 0
-    total = 30
+    total = 100
     for i in range(1, total + 1):
         if evaluate(pre_prompt, construct_equation()):
             correct += 1
