@@ -148,11 +148,11 @@ def construct_equation() -> str:
     return to_ret
 
 
-def run(pre_prompt: str):
+def run(pre_prompt: str, equations: list[str]):
     correct = 0
-    total = 100
+    total = len(equations)
     for i in range(1, total + 1):
-        if evaluate(pre_prompt, construct_equation()):
+        if evaluate(pre_prompt, equations[i - 1]):
             correct += 1
         if i % 5 == 0:
             logger.info(f"Progress: {i}/{total} correct: ({correct}/{i})")
@@ -161,5 +161,6 @@ def run(pre_prompt: str):
 
 if __name__ == "__main__":
     # logger.level = logging.DEBUG
-    run(SIMPLE_PROMPT)
-    run(AGENT_PROMPT)
+    equations = [construct_equation() for _ in range(100)]
+    run(SIMPLE_PROMPT, equations)
+    run(AGENT_PROMPT, equations)
