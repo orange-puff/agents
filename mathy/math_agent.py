@@ -64,6 +64,20 @@ Final output:
 EQUATIONS_FILE = os.path.join(os.path.dirname(__file__), "equations.txt")
 
 
+def construct_equation() -> str:
+    num_low = 20
+    num_high = 250
+    nums_low = 2
+    nums_high = 4
+    to_ret = ""
+    nums = random.randint(nums_low, nums_high)
+    for i in range(nums):
+        to_ret += str(random.randint(num_low, num_high))
+        if i != nums - 1:
+            to_ret += random.choice([" + ", " - ", " * "])
+    return to_ret
+
+
 def build_prompt(messages):
     prompt = ""
     for i, msg in enumerate(messages):
@@ -111,8 +125,9 @@ def evaluate(system_prompt: str, equation: str) -> bool:
             "content": f'Here is the equation you need to solve: "{equation}"',
         },
     ]
+    max_iter = equation.count("+") + equation.count("-") + equation.count("*") + 1
     num_iter = 0
-    while num_iter < 3:
+    while num_iter < max_iter:
         num_iter += 1
         final_prompt = build_prompt(conversation)
         llm_res = send_request_and_get_response(final_prompt)
@@ -145,7 +160,7 @@ def evaluate(system_prompt: str, equation: str) -> bool:
         match = re.search(r"<answer>(-?\d+)</answer>", llm_res)
         if not match:
             final_prompt = build_prompt(conversation)
-            logger.error("Could not find answer in response")
+            logger.error(f"Could not find answer in response: {llm_res} for {equation}")
             logger.debug(f"{'=' * 20}\n{final_prompt}\n{'=' * 20}")
             return False
         llm_ans = int(match.group(1))
@@ -158,22 +173,6 @@ def evaluate(system_prompt: str, equation: str) -> bool:
         return False
 
 
-def construct_equation() -> str:
-    num_low = 20
-    num_high = 250
-    nums_low = 2
-    nums_high = 3
-    to_ret = ""
-    nums = random.randint(nums_low, nums_high)
-    mult_used = 0
-    for i in range(nums):
-        to_ret += str(random.randint(num_low, num_high))
-        if i != nums - 1:
-            to_ret += " * " if mult_used < 2 else random.choice([" + ", " - ", " * "])
-            mult_used += 1
-    return to_ret
-
-
 def run(system_prompt: str, equations: list[str]):
     correct = 0
     total = len(equations)
@@ -182,11 +181,11 @@ def run(system_prompt: str, equations: list[str]):
             correct += 1
         if i % 5 == 0:
             logger.info(f"Progress: {i}/{total} correct: ({correct}/{i})")
-    print(f"Accuracy: {correct / total}")
+    logger.info(f"Accuracy: {correct / total}")
 
 
 if __name__ == "__main__":
-    num_equations = 20
+    num_equations = 50
     # logger.level = logging.DEBUG
     print(EQUATIONS_FILE)
     if os.path.exists(EQUATIONS_FILE):
