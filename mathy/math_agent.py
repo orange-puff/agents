@@ -4,6 +4,7 @@ import random
 import logging
 import re
 import operator
+import os
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -60,6 +61,25 @@ User replies:
 Final output:
 <answer>25</answer>
 """
+EQUATIONS_FILE = os.path.join(os.path.dirname(__file__), "equations.txt")
+
+
+def build_prompt(messages):
+    prompt = ""
+    for i, msg in enumerate(messages):
+        role = msg["role"]
+        content = msg["content"]
+        is_last = i == len(messages) - 1
+
+        if role in ("user", "system"):
+            prompt += "<start_of_turn>user\n" + content + "<end_of_turn>\n"
+            if is_last:
+                prompt += "<start_of_turn>model\n"
+        elif role == "assistant":
+            prompt += "<start_of_turn>model\n" + content
+            if not is_last:
+                prompt += "<end_of_turn>\n"
+    return prompt
 
 
 def send_request_and_get_response(prompt: str) -> str:
@@ -80,20 +100,23 @@ def send_request_and_get_response(prompt: str) -> str:
     return to_ret
 
 
-def evaluate(pre_prompt: str, prompt: str) -> bool:
-    ans = eval(prompt)
-    logger.debug(f"Evaluating: {prompt} with answer: {ans}")
+def evaluate(system_prompt: str, equation: str) -> bool:
+    ans = eval(equation)
+    logger.debug(f"Evaluating: {equation} with answer: {ans}")
 
     conversation = [
-        f"SYSTEM PROMPT: {pre_prompt}",
-        f'Here is the equation you need to solve: "{prompt}"',
+        {"role": "system", "content": system_prompt},
+        {
+            "role": "user",
+            "content": f'Here is the equation you need to solve: "{equation}"',
+        },
     ]
     num_iter = 0
     while num_iter < 3:
         num_iter += 1
-        final_prompt = "\n".join(conversation)
+        final_prompt = build_prompt(conversation)
         llm_res = send_request_and_get_response(final_prompt)
-        conversation.append(llm_res)
+        conversation.append({"role": "assistant", "content": llm_res})
 
         logger.debug(
             f"{'=' * 20}\nprompt sent: {final_prompt}\nLLM response:\n{llm_res}\n{'=' * 20}"
@@ -108,7 +131,10 @@ def evaluate(pre_prompt: str, prompt: str) -> bool:
             search = re.search(pattern, llm_res)
             if search:
                 conversation.append(
-                    f"<tool-result>{op(int(search.group(1)), int(search.group(2)))}</tool-result>"
+                    {
+                        "role": "user",
+                        "content": f"<tool-result>{op(int(search.group(1)),int(search.group(2)))}</tool-result>",
+                    }
                 )
                 tool_used = True
                 break
@@ -118,7 +144,7 @@ def evaluate(pre_prompt: str, prompt: str) -> bool:
 
         match = re.search(r"<answer>(-?\d+)</answer>", llm_res)
         if not match:
-            final_prompt = "\n".join(conversation)
+            final_prompt = build_prompt(conversation)
             logger.error("Could not find answer in response")
             logger.debug(f"{'=' * 20}\n{final_prompt}\n{'=' * 20}")
             return False
@@ -126,7 +152,7 @@ def evaluate(pre_prompt: str, prompt: str) -> bool:
         return ans == llm_ans
 
     if num_iter == 3:
-        final_prompt = "\n".join(conversation)
+        final_prompt = build_prompt(conversation)
         logger.error("Agent got stuck in a loop")
         logger.debug(f"{'=' * 20}\n{final_prompt}\n{'=' * 20}")
         return False
@@ -148,11 +174,11 @@ def construct_equation() -> str:
     return to_ret
 
 
-def run(pre_prompt: str, equations: list[str]):
+def run(system_prompt: str, equations: list[str]):
     correct = 0
     total = len(equations)
     for i in range(1, total + 1):
-        if evaluate(pre_prompt, equations[i - 1]):
+        if evaluate(system_prompt, equations[i - 1]):
             correct += 1
         if i % 5 == 0:
             logger.info(f"Progress: {i}/{total} correct: ({correct}/{i})")
@@ -160,7 +186,16 @@ def run(pre_prompt: str, equations: list[str]):
 
 
 if __name__ == "__main__":
+    num_equations = 20
     # logger.level = logging.DEBUG
-    equations = [construct_equation() for _ in range(100)]
+    print(EQUATIONS_FILE)
+    if os.path.exists(EQUATIONS_FILE):
+        with open(EQUATIONS_FILE, "r") as f:
+            equations = [line.strip() for line in f.readlines()][:num_equations]
+    else:
+        equations = [construct_equation() for _ in range(num_equations)]
+        with open(EQUATIONS_FILE, "w") as f:
+            f.write("\n".join(equations))
+
     run(SIMPLE_PROMPT, equations)
     run(AGENT_PROMPT, equations)
