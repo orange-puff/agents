@@ -68,13 +68,15 @@ def construct_equation() -> str:
     num_low = 20
     num_high = 250
     nums_low = 2
-    nums_high = 4
+    nums_high = 3
     to_ret = ""
     nums = random.randint(nums_low, nums_high)
+    num_mult = 0
     for i in range(nums):
         to_ret += str(random.randint(num_low, num_high))
         if i != nums - 1:
-            to_ret += random.choice([" + ", " - ", " * "])
+            to_ret += " * " if num_mult < 1 else random.choice([" + ", " - "])
+            num_mult += 1
     return to_ret
 
 
